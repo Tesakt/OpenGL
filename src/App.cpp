@@ -1,98 +1,198 @@
-
 #include <GL/glew.h>
 #include <GL/freeglut.h>
 #include <iostream>
 #include <cmath>
+#include <vector>
+#include <random>
 
 #define M_PI 3.14159265358979323846  /* pi */
 
 using namespace std;
 
-class Circle {
+
+class DefaultSettings {
 public:
-    float cx, cy, cz, r;
-    float angle, angular_velocity; // for circular motion
-    float orbit_radius; // radius of the orbit
+
+    static int particlesCount;
+    static double gravitationalConstant;
+    static float boundary;
+    static float particleSizeScale;
+    static float epsilon;
+};
+
+// Simulation settings
+int DefaultSettings::particlesCount = 500;
+double DefaultSettings::gravitationalConstant = 1.0;
+float DefaultSettings::boundary = 40.0f;
+float DefaultSettings::particleSizeScale = 0.55f;
+float DefaultSettings::epsilon = 0.1f;
+
+
+class Particle {
+public:
+    float position[3];
+    float velocity[3];
+    float acceleration[3];
     float mass;
-    Circle* parent; // Pointer to parent object (planet)
+    friend class DefaultSettings;
 
-    Circle(float orbit_radius, float r, float angular_velocity = 0, float mass = 1.0, float cy = 0.0f, float cz = 0.0f, Circle* parent = nullptr) {
-        this->orbit_radius = orbit_radius;
-        this->cx = orbit_radius; // Initial position at the orbit radius
-        this->cy = cy;
-        this->cz = cz;
-        this->r = r;
-        this->mass = mass;
-        this->angle = 0.0f;
-        this->angular_velocity = angular_velocity;
-        this->parent = parent;
-        cout << "Circle C" << endl;
-    }
+    Particle(float x, float y, float z, float vx, float vy, float vz, float m) {
+        position[0] = x;
+        position[1] = y;
+        position[2] = z;
 
-    ~Circle() {
-        cout << "Circle D" << endl;
+        velocity[0] = vx;
+        velocity[1] = vy;
+        velocity[2] = vz;
+
+        acceleration[0] = 0.0;
+        acceleration[1] = 0.0;
+        acceleration[2] = 0.0;
+
+        mass = m;
     }
 
     void update(float deltaTime) {
-        // Update the angle for circular motion
-        angle += angular_velocity * deltaTime;
-        cx = cos(angle) * orbit_radius;
-        cz = sin(angle) * orbit_radius;
-
-        // If the circle has a parent (e.g., a moon orbiting a planet), update its position relative to the parent
-        if (parent) {
-            cx += parent->cx;
-            cz += parent->cz;
+        for (int i = 0; i < 3; i++) {
+            position[i] += velocity[i] * deltaTime;
+            velocity[i] += acceleration[i] * deltaTime;
         }
+
+        // Check for boundary collision and reverse velocity if necessary
+        if (position[0] < -DefaultSettings::boundary)
+            if (velocity[0] < 0)
+                velocity[0] = -velocity[0];
+
+        if (position[0] > DefaultSettings::boundary)
+            if (velocity[0] > 0)
+                velocity[0] = -velocity[0];
+
+        if (position[1] < -DefaultSettings::boundary)
+            if (velocity[1] < 0)
+                velocity[1] = -velocity[1];
+
+        if (position[1] > DefaultSettings::boundary)
+            if (velocity[1] > 0)
+                velocity[1] = -velocity[1];
+
+        if (position[2] < -DefaultSettings::boundary)
+            if (velocity[2] < 0)
+                velocity[2] = -velocity[2];
+
+        if (position[2] > DefaultSettings::boundary)
+            if (velocity[2] > 0)
+                velocity[2] = -velocity[2];
+    }
+
+    void applyForce(float forcex, float forcey, float forcez) {
+        acceleration[0] += forcex / mass;
+        acceleration[1] += forcey / mass;
+        acceleration[2] += forcez / mass;
     }
 
     void DrawCircle() {
+        glColor3f(1.0f, 1.0f, 0.0f);
         glPushMatrix();
-        glTranslatef(cx, cy, cz);
-        glutSolidSphere(r, 20, 20); // Draw a solid sphere using FreeGLUT
+        glTranslatef(position[0], position[1], position[2]);
+        glutSolidSphere(pow(mass, DefaultSettings::particleSizeScale) / 20, 20, 20); // Draw a solid sphere using FreeGLUT
         glPopMatrix();
     }
 };
-// Global sun object
-Circle sun(0.0, 1.0, 0.0); // Central sun
-Circle mercury(0.39, 0.005, 0.5); // Planets with orbits and angular velocities
-Circle venus(0.72, 0.01, 0.3);
 
-Circle moon2(0.2, 0.05, 0.5, 1.0, 0.0f, 0.0f, &venus);
 
-Circle earth(1.00, 0.01, 0.65);
+vector<Particle> particles;
 
-Circle moon3(0.2, 0.05, 0.6, 1.0, 0.0f, 0.0f, &earth);
 
-Circle mars(1.52, 0.005, 0.1);
+void generateRandomParticles(int n) {
+    // Ustawienia zakresów dla pozycji, prêdkoœci i masy
+    random_device rd;
+    mt19937 gen(rd());
+    uniform_real_distribution<float> posDist(-DefaultSettings::boundary, DefaultSettings::boundary);
+    uniform_real_distribution<float> velDist(-1.0f, 1.0f);
+    uniform_real_distribution<float> massDist(0.5f, 5.0f);
 
-Circle jupiter(5.20, 0.1, 0.15);
-Circle saturn(9.54, 0.1, 0.43);
-Circle uranus(19.22, 0.05, 0.13);
-Circle neptune(30.06, 0.05, 0.005);
+    for (int i = 0; i < n; ++i) {
+        float x = posDist(gen);
+        float y = posDist(gen);
+        float z = posDist(gen);
+        float vx = velDist(gen);
+        float vy = velDist(gen);
+        float vz = velDist(gen);
+        float mass = massDist(gen);
 
+        particles.push_back(Particle(x, y, z, vx, vy, vz, mass));
+    }
+}
 
 float lastTime;
 
+void drawBox() {
+
+    glColor3f(1.0f, 1.0f, 1.0f);
+
+    glBegin(GL_LINES);
+    // Front face
+    glVertex3f(-DefaultSettings::boundary, -DefaultSettings::boundary, DefaultSettings::boundary);
+    glVertex3f(DefaultSettings::boundary, -DefaultSettings::boundary, DefaultSettings::boundary);
+
+    glVertex3f(DefaultSettings::boundary, -DefaultSettings::boundary, DefaultSettings::boundary);
+    glVertex3f(DefaultSettings::boundary, DefaultSettings::boundary, DefaultSettings::boundary);
+
+    glVertex3f(DefaultSettings::boundary, DefaultSettings::boundary, DefaultSettings::boundary);
+    glVertex3f(-DefaultSettings::boundary, DefaultSettings::boundary, DefaultSettings::boundary);
+
+    glVertex3f(-DefaultSettings::boundary, DefaultSettings::boundary, DefaultSettings::boundary);
+    glVertex3f(-DefaultSettings::boundary, -DefaultSettings::boundary, DefaultSettings::boundary);
+
+    // Back face
+    glVertex3f(-DefaultSettings::boundary, -DefaultSettings::boundary, -DefaultSettings::boundary);
+    glVertex3f(DefaultSettings::boundary, -DefaultSettings::boundary, -DefaultSettings::boundary);
+
+    glVertex3f(DefaultSettings::boundary, -DefaultSettings::boundary, -DefaultSettings::boundary);
+    glVertex3f(DefaultSettings::boundary, DefaultSettings::boundary, -DefaultSettings::boundary);
+
+    glVertex3f(DefaultSettings::boundary, DefaultSettings::boundary, -DefaultSettings::boundary);
+    glVertex3f(-DefaultSettings::boundary, DefaultSettings::boundary, -DefaultSettings::boundary);
+
+    glVertex3f(-DefaultSettings::boundary, DefaultSettings::boundary, -DefaultSettings::boundary);
+    glVertex3f(-DefaultSettings::boundary, -DefaultSettings::boundary, -DefaultSettings::boundary);
+
+    // Connect front and back faces
+    glVertex3f(-DefaultSettings::boundary, -DefaultSettings::boundary, DefaultSettings::boundary);
+    glVertex3f(-DefaultSettings::boundary, -DefaultSettings::boundary, -DefaultSettings::boundary);
+
+    glVertex3f(DefaultSettings::boundary, -DefaultSettings::boundary, DefaultSettings::boundary);
+    glVertex3f(DefaultSettings::boundary, -DefaultSettings::boundary, -DefaultSettings::boundary);
+
+    glVertex3f(DefaultSettings::boundary, DefaultSettings::boundary, DefaultSettings::boundary);
+    glVertex3f(DefaultSettings::boundary, DefaultSettings::boundary, -DefaultSettings::boundary);
+
+    glVertex3f(-DefaultSettings::boundary, DefaultSettings::boundary, DefaultSettings::boundary);
+    glVertex3f(-DefaultSettings::boundary, DefaultSettings::boundary, -DefaultSettings::boundary);
+    glEnd();
+
+}
+
+
 void setupLighting() {
-    glEnable(GL_LIGHTING);
-    glEnable(GL_LIGHT0);
+    //glEnable(GL_LIGHTING);
+    //glEnable(GL_LIGHT0);
 
-    // Position the light at the sun's position
-    GLfloat light_position[] = { sun.cx, sun.cy, sun.cz, 1.0 };
-    glLightfv(GL_LIGHT0, GL_POSITION, light_position);
+    //// Position the light at the sun's position
+    //GLfloat light_position[] = { 1, 1, 1, 1.0 };
+    //glLightfv(GL_LIGHT0, GL_POSITION, light_position);
 
-    // Set the ambient light properties
-    GLfloat ambient_light[] = { 0.2, 0.2, 0.2, 1.0 };
-    glLightfv(GL_LIGHT0, GL_AMBIENT, ambient_light);
+    //// Set the ambient light properties
+    //GLfloat ambient_light[] = { 0.2, 0.2, 0.2, 1.0 };
+    //glLightfv(GL_LIGHT0, GL_AMBIENT, ambient_light);
 
-    // Set the diffuse light properties
-    GLfloat diffuse_light[] = { 0.8, 0.8, 0.8, 1.0 };
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse_light);
+    //// Set the diffuse light properties
+    //GLfloat diffuse_light[] = { 0.8, 0.8, 0.8, 1.0 };
+    //glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse_light);
 
-    // Set the specular light properties
-    GLfloat specular_light[] = { 1.0, 1.0, 1.0, 1.0 };
-    glLightfv(GL_LIGHT0, GL_SPECULAR, specular_light);
+    //// Set the specular light properties
+    //GLfloat specular_light[] = { 1.0, 1.0, 1.0, 1.0 };
+    //glLightfv(GL_LIGHT0, GL_SPECULAR, specular_light);
 }
 
 void setupViewport(int width, int height) {
@@ -100,16 +200,50 @@ void setupViewport(int width, int height) {
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    gluPerspective(45.0, (double)width / height, 1.0, 100.0);
+    gluPerspective(45.0, (double)width / height, 1.0, DefaultSettings::boundary * 10);
     glMatrixMode(GL_MODELVIEW);
 }
 
+void calculateForces() {
 
-float camera_distance = 10.0f;
+    // Reset acceleration for all particles
+    for (auto& p : particles) {
+        p.acceleration[0] = 0.0;
+        p.acceleration[1] = 0.0;
+        p.acceleration[2] = 0.0;
+    }
+
+    for (size_t i = 0; i < particles.size(); i++) {
+        for (size_t j = i + 1; j < particles.size(); j++) {
+            double dx = particles[j].position[0] - particles[i].position[0];
+            double dy = particles[j].position[1] - particles[i].position[1];
+            double dz = particles[j].position[2] - particles[i].position[2];
+
+            double distanceSquared = pow(dx, 2) + pow(dy, 2) + pow(dz, 2);
+            double distance = sqrt(distanceSquared + DefaultSettings::epsilon); // Add epsilon to avoid division by zero
+
+            double forceMagnitude = (DefaultSettings::gravitationalConstant * particles[i].mass * particles[j].mass) / distanceSquared;
+
+            double force[3];
+            force[0] = forceMagnitude * dx / distance;
+            force[1] = forceMagnitude * dy / distance;
+            force[2] = forceMagnitude * dz / distance;
+
+            particles[i].applyForce(force[0], force[1], force[2]);
+
+            particles[j].applyForce(-force[0], -force[1], -force[2]);
+        }
+    }
+}
+
+
+float camera_distance = DefaultSettings::boundary * 4.0f;
 float camera_angle_x = 0.0f;
 float camera_angle_y = 0.0f;
 
 float X = 0.0, Y = 0.0, Z = 0.0;
+float posX = 0.0, posY = 1.0, posZ = 0.0;
+
 
 void display() {
     float currentTime = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
@@ -117,19 +251,11 @@ void display() {
     lastTime = currentTime;
 
 
-
     /* Update positions based on velocities */
-    sun.update(deltaTime); // Ensure the sun updates in case it moves
-    mercury.update(deltaTime);
-    venus.update(deltaTime);
-    moon2.update(deltaTime);
-    earth.update(deltaTime);
-    moon3.update(deltaTime);
-    mars.update(deltaTime);
-    jupiter.update(deltaTime);
-    saturn.update(deltaTime);
-    uranus.update(deltaTime);
-    neptune.update(deltaTime);
+    calculateForces();
+    for (auto& p : particles) {
+        p.update(deltaTime);
+    }
 
 
     /* Update light position */
@@ -145,19 +271,16 @@ void display() {
 
     gluLookAt(eyeX, eyeY, eyeZ,  // Eye position
         X, Y, Z,    // Look-at point
-        0.0, 1.0, 0.0);   // Up direction
+        posX, posY, posZ);   // Up direction
 
-    sun.DrawCircle();
-    mercury.DrawCircle();
-    venus.DrawCircle();
-    moon2.DrawCircle();
-    earth.DrawCircle();
-    moon3.DrawCircle();
-    mars.DrawCircle();
-    jupiter.DrawCircle();
-    saturn.DrawCircle();
-    uranus.DrawCircle();
-    neptune.DrawCircle();
+
+
+    drawBox();
+
+
+    for (auto& p : particles) {
+        p.DrawCircle();
+    }
 
 
     glutSwapBuffers();
@@ -174,42 +297,11 @@ void keyboard(int key, int x, int y) {
         break;
     case GLUT_KEY_UP:
         camera_angle_y += angle_step;
-        if (camera_angle_y > M_PI / 2.0f) camera_angle_y = M_PI / 2.0f; // Limit the vertical angle
+        if (camera_angle_y >= M_PI / 2.0f) camera_angle_y = -M_PI / 2.0f; // Limit the vertical angle
         break;
     case GLUT_KEY_DOWN:
         camera_angle_y -= angle_step;
-        if (camera_angle_y < -M_PI / 2.0f) camera_angle_y = -M_PI / 2.0f; // Limit the vertical angle
-        break;
-
-        
-
-    case GLUT_KEY_F1:
-        X = sun.cx; Y = sun.cy; Z = sun.cz;
-        break;
-    case GLUT_KEY_F2:
-        X = mercury.cx; Y = mercury.cy; Z = mercury.cz;
-        break;
-    case GLUT_KEY_F3:
-        X = venus.cx; Y = venus.cy; Z = venus.cz;
-        break;
-
-    case GLUT_KEY_F4:
-        X = earth.cx; Y = earth.cy; Z = earth.cz;
-        break;
-    case GLUT_KEY_F5:
-        X = mars.cx; Y = mars.cy; Z = mars.cz;
-        break;
-    case GLUT_KEY_F6:
-        X = jupiter.cx; Y = jupiter.cy; Z = jupiter.cz;
-        break;
-    case GLUT_KEY_F7:
-        X = saturn.cx; Y = saturn.cy; Z = saturn.cz;
-        break;
-    case GLUT_KEY_F8:
-        X = uranus.cx; Y = uranus.cy; Z = uranus.cz;
-        break;
-    case GLUT_KEY_F9:
-        X = neptune.cx; Y = neptune.cy; Z = neptune.cz;
+        if (camera_angle_y <= -M_PI / 2.0f) camera_angle_y = M_PI / 2.0f; // Limit the vertical angle
         break;
     }
     glutPostRedisplay();
@@ -218,12 +310,12 @@ void keyboard(int key, int x, int y) {
 void mouse(int button, int state, int x, int y) {
     if (state == GLUT_DOWN) {
         if (button == 3) { // Scroll up
-            camera_distance -= 0.5f;
+            camera_distance -= DefaultSettings::boundary * 0.05;
             if (camera_distance < 2.0f) camera_distance = 2.0f; // Limit zoom in
         }
         else if (button == 4) { // Scroll down
-            camera_distance += 0.5f;
-            if (camera_distance > 50.0f) camera_distance = 50.0f; // Limit zoom out
+            camera_distance += DefaultSettings::boundary * 0.05;
+            if (camera_distance > DefaultSettings::boundary * 5) camera_distance = DefaultSettings::boundary * 5; // Limit zoom out
         }
         glutPostRedisplay();
     }
@@ -233,11 +325,42 @@ void reshape(int w, int h) {
     setupViewport(w, h);
 }
 
+
 int main(int argc, char** argv) {
+    char useDefaults;
+    int particlesCount;
+    double gravitationalConstant;
+    float boundary;
+    float particleSizeScale;
+
+    cout << "Do you want to use default settings? (y/n): ";
+    cin >> useDefaults;
+
+    if (useDefaults == 'n' || useDefaults == 'N') {
+        cout << "Enter the number of particles (default is " << DefaultSettings::particlesCount << "): ";
+        cin >> particlesCount;
+
+        cout << "Enter the gravitational constant (default is " << DefaultSettings::gravitationalConstant << "): ";
+        cin >> gravitationalConstant;
+
+        cout << "Enter the boundary size (default is " << DefaultSettings::boundary << "): ";
+        cin >> boundary;
+
+        cout << "Enter the particle size scale (default is " << DefaultSettings::particleSizeScale << "): ";
+        cin >> particleSizeScale;
+
+        DefaultSettings::particlesCount = particlesCount;
+        DefaultSettings::gravitationalConstant = gravitationalConstant;
+        DefaultSettings::boundary = boundary;
+        DefaultSettings::particleSizeScale = particleSizeScale;
+    }
+
+    generateRandomParticles(DefaultSettings::particlesCount);
+
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
-    glutInitWindowSize(800, 800);
-    glutCreateWindow("Solar System in 3D");
+    glutInitWindowSize(1920, 1080);
+    glutCreateWindow("Particle simulation");
 
     glewExperimental = GL_TRUE;
     if (glewInit() != GLEW_OK) {
@@ -262,6 +385,3 @@ int main(int argc, char** argv) {
 
     return 0;
 }
-
-
-
